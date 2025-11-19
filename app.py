@@ -985,7 +985,7 @@ def download_and_convert(url, video_id, audio_id, filename, codec, preset, pass_
         while not q.empty(): q.get()
         q.put({"stage": "Initializing download.", "percent": 0})
         # Build yt-dlp format selector safely
-        yt_formats = f"{video_id}+{audio_id}" if audio_id else (video_id if is_muxed else f"{video_id}+bestaudio")
+        yt_formats = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
         yt_dlp_cmd = [sys.executable, "-m", "yt_dlp", "-f", yt_formats, "-o", tmp_path_template, "--merge-output-format", "mkv", url]
         if os.path.exists(COOKIES_FILE):
             yt_dlp_cmd.extend(["--cookies", COOKIES_FILE])
