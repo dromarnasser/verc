@@ -10,22 +10,6 @@ import time
 import shutil
 from urllib.parse import quote, unquote
 
-# -------------------------------------------------------------------
-# Ensure ffmpeg exists – install it on Railway if it's missing
-# (use same approach as your working app_3.py)
-# -------------------------------------------------------------------
-if not shutil.which("ffmpeg"):
-    print("⚡ Installing ffmpeg ...")
-    try:
-        subprocess.run(["apt-get", "update", "-y"], check=True)
-        subprocess.run(["apt-get", "install", "-y", "ffmpeg"], check=True)
-        print("✅ ffmpeg installed successfully")
-    except Exception as e:
-        print(f"Error installing ffmpeg: {e}")
-        # don't sys.exit here; we'll continue but encoding/merging will fail if ffmpeg missing
-else:
-    print("✅ ffmpeg already installed")
-
 # -----------------------------
 # Auto-install missing Python packages
 # -----------------------------
