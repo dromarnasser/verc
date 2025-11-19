@@ -8,6 +8,7 @@ import threading
 import queue
 import time
 import shutil
+import base64
 from urllib.parse import quote, unquote
 from flask import Flask, render_template_string, request, send_from_directory, flash, url_for, Response, redirect, session, jsonify
 from werkzeug.utils import secure_filename
@@ -22,12 +23,16 @@ DOWNLOAD_FOLDER = os.path.join('/tmp', 'downloads')
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 COOKIES_FILE = os.path.join('/tmp', 'youtube_cookies.txt')
-# === ADD THIS NEW BLOCK ===
-# Get cookie content from environment variable and write to /tmp
-cookie_content = os.environ.get('YOUTUBE_COOKIES_CONTENT')
-if cookie_content:
-    with open(COOKIES_FILE, 'w') as f:
-        f.write(cookie_content)
+# Get Base64 encoded cookie content from environment variable
+encoded_cookie = os.environ.get('YOUTUBE_COOKIES_CONTENT')
+if encoded_cookie:
+    # Decode from Base64 and write to the file in /tmp
+    try:
+        decoded_cookie = base64.b64decode(encoded_cookie).decode('utf-8')
+        with open(COOKIES_FILE, 'w') as f:
+            f.write(decoded_cookie)
+    except Exception as e:
+        print(f"Could not decode or write cookie file: {e}")
         
 PIXELDRAIN_API_KEY = os.environ.get("PIXELDRAIN_API_KEY", "")  # optional
 
@@ -40,14 +45,6 @@ print(f"🍪 Cookies file: {'Exists' if os.path.exists(COOKIES_FILE) else 'Not f
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a_very_secret_key_for_flask")
 progress_queue = queue.Queue()
-
-# -----------------------------
-# Templates (main + encode + operation)
-# (we keep the improved UI from appai5.py)
-# -----------------------------
-TEMPLATE = """(the main template is unchanged from your last appai5.py)"""
-# Note: To keep this message compact, the big HTML templates are filled back below in full code.
-# (They are restored verbatim from your working appai5.py version in the next lines.)
 
 # -----------------------------
 # Main HTML templates (full)
@@ -135,6 +132,8 @@ TEMPLATE = """
             
             <label>Filename (will be saved as .mkv):</label><br>
             <input type="text" name="manual_filename" value="{{ manual_filename }}" required><br><br>
+
+            <label><input type="checkbox" name="upload_pixeldrain_manual" value="true"> Upload to Pixeldrain after merge</label><br><br>
             
             <button type="submit" name="action" value="manual_merge">Merge & Download</button>
         {% endif %}
@@ -402,8 +401,6 @@ TEMPLATE = """
 </html>
 """
 
-ENCODE_TEMPLATE = """ (same enhanced encode page HTML as in appai5.py) """
-# We'll embed the encode and file operation templates in full for correctness:
 ENCODE_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -984,21 +981,23 @@ def download_and_convert(url, video_id, audio_id, filename, codec, preset, pass_
     try:
         while not q.empty(): q.get()
         q.put({"stage": "Initializing download.", "percent": 0})
-        # Build yt-dlp format selector safely
+        
         yt_formats = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
         yt_dlp_cmd = [sys.executable, "-m", "yt_dlp", "-f", yt_formats, "-o", tmp_path_template, "--merge-output-format", "mkv", url]
         if os.path.exists(COOKIES_FILE):
             yt_dlp_cmd.extend(["--cookies", COOKIES_FILE])
+        
         run_command_with_progress(yt_dlp_cmd, "Downloading with yt-dlp.", q)
         q.put({"stage": "Download Complete", "percent": 100})
-        # find created file
+        
         found_files = [f for f in os.listdir(DOWNLOAD_FOLDER) if f.startswith(os.path.basename(tmp_path_template))]
         if not found_files:
-            # try other pattern
             found_files = [f for f in os.listdir(DOWNLOAD_FOLDER) if f.startswith(base_name)]
         if not found_files:
             raise FileNotFoundError("yt-dlp did not create the expected file.")
+        
         actual_tmp_path = os.path.join(DOWNLOAD_FOLDER, found_files[0])
+        
         if codec == "none":
             if os.path.exists(final_path): os.remove(final_path)
             os.rename(actual_tmp_path, final_path)
@@ -1006,9 +1005,10 @@ def download_and_convert(url, video_id, audio_id, filename, codec, preset, pass_
         else:
             final_path = os.path.join(DOWNLOAD_FOLDER, base_name + ".mkv")
             encode_file(actual_tmp_path, os.path.basename(final_path), codec, preset, pass_mode, bitrate, crf, audio_bitrate, fps, force_stereo, q, upload_pixeldrain=kwargs.get("upload_pixeldrain", False))
-        # After any potential encoding, check for pixeldrain upload
-        if kwargs.get("upload_pixeldrain"):
+
+        if kwargs.get("upload_pixeldrain") and codec == "none":
             upload_to_pixeldrain(final_path, os.path.basename(final_path), q)
+
     except Exception as e:
         q.put({"error": str(e)})
     finally:
@@ -1017,8 +1017,8 @@ def download_and_convert(url, video_id, audio_id, filename, codec, preset, pass_
             except OSError: pass
         q.put({"log": "DONE"})
 
-def manual_merge_worker(url, video_id, audio_id, filename, q):
-    """Worker to download and merge streams using manually provided IDs."""
+def manual_merge_worker(url, video_id, audio_id, filename, q, upload_to_pixeldrain=False):
+    """Worker to download, merge, and optionally upload."""
     safe_name = get_safe_filename(filename)
     base_name, _ = os.path.splitext(safe_name)
     final_path = os.path.join(DOWNLOAD_FOLDER, base_name + ".mkv")
@@ -1027,16 +1027,29 @@ def manual_merge_worker(url, video_id, audio_id, filename, q):
         q.put({"stage": "Initializing manual download...", "percent": 0})
         video_id_clean = video_id.strip()
         audio_id_clean = audio_id.strip() if audio_id else ""
+        
         if audio_id_clean:
             format_selector = f"{video_id_clean}+{audio_id_clean}"
         else:
             format_selector = video_id_clean
+            
         # Use yt-dlp to download and merge into final_path
         yt_dlp_cmd = [sys.executable, "-m", "yt_dlp", "-f", format_selector, "-o", final_path, "--merge-output-format", "mkv", url]
         if os.path.exists(COOKIES_FILE):
             yt_dlp_cmd.extend(["--cookies", COOKIES_FILE])
+        
         run_command_with_progress(yt_dlp_cmd, "Downloading & Merging with yt-dlp...", q)
         q.put({"stage": "✅ Download Complete!", "percent": 100})
+        
+        # --- ADDED THIS UPLOAD LOGIC ---
+        if upload_to_pixeldrain:
+            if os.path.exists(final_path):
+                upload_filename = os.path.basename(final_path)
+                upload_to_pixeldrain(final_path, upload_filename, q)
+            else:
+                q.put({"log": "WARNING: File not found for upload."})
+        # -------------------------------
+                
     except Exception as e:
         q.put({"error": str(e)})
     finally:
@@ -1150,13 +1163,15 @@ def index_post():
             }
         
         elif action == "manual_merge":
+            upload_flag = request.form.get("upload_pixeldrain_manual") == "true"
             thread_target = manual_merge_worker
             thread_args = (
                 request.form.get("manual_url"),
                 request.form.get("manual_video_id"),
                 request.form.get("manual_audio_id"),
                 request.form.get("manual_filename"),
-                progress_queue
+                progress_queue,
+                upload_flag  # Pass the new flag to the worker
             )
         
         elif action == "direct_download":
