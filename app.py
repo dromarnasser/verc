@@ -9,23 +9,6 @@ import queue
 import time
 import shutil
 from urllib.parse import quote, unquote
-
-# -----------------------------
-# Auto-install missing Python packages
-# -----------------------------
-required_packages = ["flask", "yt-dlp", "requests"]
-try:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for package in required_packages:
-        try:
-            __import__(package)
-        except ImportError:
-            print(f"⚡ Installing missing package: {package} ...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-except Exception as e:
-    print(f"Error installing packages: {e}")
-    sys.exit(1)
-
 from flask import Flask, render_template_string, request, send_from_directory, flash, url_for, Response, redirect, session, jsonify
 from werkzeug.utils import secure_filename
 import requests
