@@ -986,7 +986,7 @@ def download_and_convert(url, video_id, audio_id, filename, codec, preset, pass_
         q.put({"stage": "Initializing download.", "percent": 0})
         # Build yt-dlp format selector safely
         yt_formats = f"{video_id}+{audio_id}" if audio_id else (video_id if is_muxed else f"{video_id}+bestaudio")
-        yt_dlp_cmd = ["yt-dlp", "-f", yt_formats, "-o", tmp_path_template, "--merge-output-format", "mkv", url]
+        yt_dlp_cmd = [sys.executable, "-m", "yt_dlp", "-f", yt_formats, "-o", tmp_path_template, "--merge-output-format", "mkv", url]
         if os.path.exists(COOKIES_FILE):
             yt_dlp_cmd.extend(["--cookies", COOKIES_FILE])
         run_command_with_progress(yt_dlp_cmd, "Downloading with yt-dlp.", q)
@@ -1032,7 +1032,7 @@ def manual_merge_worker(url, video_id, audio_id, filename, q):
         else:
             format_selector = video_id_clean
         # Use yt-dlp to download and merge into final_path
-        yt_dlp_cmd = ["yt-dlp", "-f", format_selector, "-o", final_path, "--merge-output-format", "mkv", url]
+        yt_dlp_cmd = [sys.executable, "-m", "yt_dlp", "-f", format_selector, "-o", final_path, "--merge-output-format", "mkv", url]
         if os.path.exists(COOKIES_FILE):
             yt_dlp_cmd.extend(["--cookies", COOKIES_FILE])
         run_command_with_progress(yt_dlp_cmd, "Downloading & Merging with yt-dlp...", q)
