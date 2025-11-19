@@ -21,7 +21,14 @@ FLASK_PORT = int(os.environ.get("PORT", 5000))
 DOWNLOAD_FOLDER = os.path.join('/tmp', 'downloads')
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-COOKIES_FILE = os.path.join(os.getcwd(), "youtube_cookies.txt")
+COOKIES_FILE = os.path.join('/tmp', 'youtube_cookies.txt')
+# === ADD THIS NEW BLOCK ===
+# Get cookie content from environment variable and write to /tmp
+cookie_content = os.environ.get('YOUTUBE_COOKIES_CONTENT')
+if cookie_content:
+    with open(COOKIES_FILE, 'w') as f:
+        f.write(cookie_content)
+        
 PIXELDRAIN_API_KEY = os.environ.get("PIXELDRAIN_API_KEY", "")  # optional
 
 print(f"📂 Downloads folder: {os.path.abspath(DOWNLOAD_FOLDER)}")
