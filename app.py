@@ -35,7 +35,7 @@ import yt_dlp
 # Configuration
 # -----------------------------
 FLASK_PORT = int(os.environ.get("PORT", 5000))
-DOWNLOAD_FOLDER = os.path.join(os.getcwd(), "downloads")
+DOWNLOAD_FOLDER = os.path.join('/tmp', 'downloads')
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 COOKIES_FILE = os.path.join(os.getcwd(), "youtube_cookies.txt")
