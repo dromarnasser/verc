@@ -13,12 +13,6 @@ from flask import Flask, render_template_string, request, send_from_directory, f
 from werkzeug.utils import secure_filename
 import requests
 import yt_dlp
-from dotenv import load_dotenv
-
-# === ADD THIS LINE ===
-# Load environment variables from the .env file
-load_dotenv()
-# =====================
 
 # -----------------------------
 # Configuration
@@ -28,19 +22,15 @@ DOWNLOAD_FOLDER = os.path.join('/tmp', 'downloads')
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 COOKIES_FILE = os.path.join('/tmp', 'youtube_cookies.txt')
-# This part now reads from the .env file automatically
 cookie_content = os.environ.get('YOUTUBE_COOKIES_CONTENT')
 if cookie_content:
-    if cookie_content.strip().startswith('[') or cookie_content.strip().startswith('{'):
-        print("⚠️ WARNING: YOUTUBE_COOKIES_CONTENT appears to be in JSON format, which is incorrect.")
-        print("⚠️ It must be in the Netscape format. Use an extension like 'Get cookies.txt LOCALLY'.")
     with open(COOKIES_FILE, 'w') as f:
         f.write(cookie_content)
         
 PIXELDRAIN_API_KEY = os.environ.get("PIXELDRAIN_API_KEY", "")
 
 print(f"📂 Downloads folder: {os.path.abspath(DOWNLOAD_FOLDER)}")
-print(f"🍪 Cookies: {'Loaded from environment' if cookie_content else 'Not provided'}")
+print(f"🍪 Cookies: {'Loaded' if os.path.exists(COOKIES_FILE) else 'Not found'}")
 
 # -----------------------------
 # Flask & SSE Setup
@@ -48,10 +38,6 @@ print(f"🍪 Cookies: {'Loaded from environment' if cookie_content else 'Not pro
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super_secret_key_2025")
 progress_queue = queue.Queue()
-
-
-# --- (The rest of your application code remains exactly the same) ---
-# [ ... All your templates, helper functions, and Flask routes are unchanged ... ]
 
 # -----------------------------
 # Templates (main + encode + operation)
@@ -865,17 +851,15 @@ def fetch_formats(url):
         return '\n'.join(raw_lines), video_formats, audio_formats
     except Exception as e:
         error_msg = str(e)
-        if "cookies" in error_msg.lower():
-             flash(f"Cookie Error: {error_msg}. Please ensure your cookies are in the correct Netscape format.", "error")
-        elif "Private video" in error_msg or "unavailable" in error_msg:
-            flash("This video may be private, age-restricted, or region-blocked. Cookies may be required.", "error")
+        if "videoModel" in error_msg or "Private video" in error_msg or "unavailable" in error_msg:
+            flash("This video may be private, age-restricted, or region-blocked. Try logging in with cookies.", "error")
         else:
             flash(f"Format fetch failed: {error_msg}", "error")
         return "", [], []
 
 def get_original_filename(url):
     try:
-        ydl_opts = {'quiet': True, 'skip_download': True}
+        ydl_opts = {'quiet': True}
         if os.path.exists(COOKIES_FILE):
             ydl_opts['cookiefile'] = COOKIES_FILE
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1010,7 +994,7 @@ def download_and_convert(url, video_id, audio_id, filename, codec, preset, pass_
         format_selector = video_id
         if not is_muxed and audio_id:
             format_selector += f"+{audio_id}"
-        elif not is_muxed:
+        elif not is_muxed: # Video only stream selected, and no audio selected, so pick best audio
             format_selector += "+bestaudio"
 
         yt_dlp_cmd = [sys.executable, "-m", "yt_dlp", "-f", format_selector, "-o", tmp_path, "--merge-output-format", "mkv", url]
@@ -1270,16 +1254,13 @@ def list_files(path=""):
     for name in entries:
         full = os.path.join(base, name)
         rel_path = os.path.join(subpath, name) if subpath else name
-        try:
-            stat = os.stat(full)
-            items.append({
-                "name": name, "path": rel_path, "display_path": rel_path,
-                "is_dir": os.path.isdir(full), "mtime": stat.st_mtime,
-                "size": get_file_size(full),
-                "is_media": is_media_file(full) if os.path.isfile(full) else False
-            })
-        except FileNotFoundError:
-            continue
+        stat = os.stat(full)
+        items.append({
+            "name": name, "path": rel_path, "display_path": rel_path,
+            "is_dir": os.path.isdir(full), "mtime": stat.st_mtime,
+            "size": get_file_size(full),
+            "is_media": is_media_file(full) if os.path.isfile(full) else False
+        })
     items.sort(key=lambda x: (not x["is_dir"], -x["mtime"]))
     parent_path = "/".join(subpath.split("/")[:-1]) if subpath else ""
     parent_url = url_for("list_files", path=parent_path) if subpath else None
@@ -1291,15 +1272,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 table{width:100%;border-collapse:collapse;margin-top:20px} th,td{padding:12px;border-bottom:1px solid #ddd;text-align:left;word-break:break-all}
 th{background-color:#f2f2f2} a{color:#007bff;text-decoration:none} a:hover{text-decoration:underline}
 .flash-msg{padding:10px;border-radius:4px;margin-bottom:15px} .flash-success{background-color:#d4edda;color:#155724} .flash-error{background-color:#f8d7da;color:#721c24}
-button, .button-link{background-color:#007bff;color:#fff!important;padding:5px 10px;border:none;border-radius:4px;cursor:pointer;font-size:14px;margin-right:5px;text-decoration:none;display:inline-block}
-button:hover, .button-link:hover{background-color:#0056b3} button.delete{background-color:#dc3545} button.delete:hover{background-color:#c82333}
+button,button-link{background-color:#007bff;color:#fff!important;padding:5px 10px;border:none;border-radius:4px;cursor:pointer;font-size:14px;margin-right:5px;text-decoration:none;display:inline-block}
+button:hover,button-link:hover{background-color:#0056b3} button.delete{background-color:#dc3545} button.delete:hover{background-color:#c82333}
 button.upload{background-color:#17a2b8} button.upload:hover{background-color:#138496}
-a.encode{background-color:#28a745;color:white!important} a.encode:hover{background-color:#218838}
+button.encode{background-color:#28a745} button.encode:hover{background-color:#218838} button.rename{background-color:#ffc107;color:#212529!important} button.rename:hover{background-color:#e0a800}
 .actions{white-space:nowrap} .actions form{display:inline-block}
 </style></head><body>
 <div class="container">
-    <h1>Files in /{{ folder_name }}</h1>
-    <a href="{{ url_for('index') }}" class="button-link">🏠 Back to Main Page</a>
+    <h1>Files in {{ folder_name }}</h1>
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
@@ -1307,8 +1287,8 @@ a.encode{background-color:#28a745;color:white!important} a.encode:hover{backgrou
             {% endfor %}
         {% endif %}
     {% endwith %}
-    {% if parent_url %}<p><a href="{{ parent_url }}">⬆️ Up to parent directory</a></p>{% endif %}
-    <h3>Upload file to this directory</h3>
+    {% if parent_url %}<p><a href="{{ parent_url }}">⬆️ Up</a></p>{% endif %}
+    <h3>Upload a file from your computer to the server</h3>
     <form method="POST" action="{{ url_for('upload_local') }}" enctype="multipart/form-data" style="margin-bottom:20px;">
         <input type="file" name="file" required>
         <button type="submit" class="upload">Upload to Server</button>
@@ -1317,33 +1297,30 @@ a.encode{background-color:#28a745;color:white!important} a.encode:hover{backgrou
         <table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody>
         {% for item in items %}
         <tr>
-            <td>
-                {% if item.is_dir %}
-                    📁 <a href="{{ url_for('list_files', path=item.path) }}">{{ item.name }}</a>
-                {% else %}
-                    {{ item.name }}
-                {% endif %}
-            </td>
+            <td>{{ item.display_path }}</td>
             <td>{{ item.size }}</td>
-            <td>{{ item.mtime | timestamp_to_datetime }}</td>
+            <td>{{ item.mtime | int | timestamp_to_datetime }}</td>
             <td class="actions">
-                <a href="{{ url_for('download_file', filepath=item.path) }}">Download</a>
-                {% if item.is_media %}
-                    <a href="{{ url_for('encode_page', filepath=item.path) }}" class="button-link encode">Encode</a>
+                {% if item.is_dir %}
+                    <a href="{{ url_for('list_files', path=item.path) }}">Open</a>
+                {% else %}
+                    <a href="{{ url_for('download_file', filepath=item.path) }}">Download</a>
+                    <a href="{{ url_for('encode_page', filepath=item.path) }}" class="encode">Encode</a>
+                    <form method="POST" action="{{ url_for('delete_file', filepath=item.path) }}" style="display:inline;">
+                        <button type="submit" class="delete" onclick="return confirm('Delete \\'{{ item.display_path }}\\'?')">Delete</button>
+                    </form>
                 {% endif %}
-                <form method="POST" action="{{ url_for('delete_file', filepath=item.path) }}" style="display:inline;">
-                    <button type="submit" class="delete" onclick="return confirm('Delete \\'{{ item.name }}\\'?')">Delete</button>
-                </form>
             </td>
         </tr>
         {% endfor %}
         </tbody></table>
     {% else %}
-        <p>This directory is empty.</p>
+        <p>No files downloaded yet.</p>
     {% endif %}
+    <br><a href="{{ url_for('index') }}">🏠 Back to Main Page</a>
 </div>
 </body></html>
-    """, items=items, folder_name=subpath or "", parent_url=parent_url)
+    """, items=items, folder_name=subpath or "/", parent_url=parent_url)
 
 @app.template_filter('timestamp_to_datetime')
 def timestamp_to_datetime(s):
@@ -1354,8 +1331,8 @@ def encode_page(filepath):
     full_path = os.path.join(DOWNLOAD_FOLDER, filepath)
     if not os.path.exists(full_path):
         flash("File not found.", "error"); return redirect(url_for('list_files'))
-    suggested = os.path.splitext(os.path.basename(filepath))[0] + ".encoded.mkv"
-    return render_template_string(ENCODE_TEMPLATE, filepath=filepath, suggested_output=suggested, codec="h265", pass_mode="1-pass", bitrate="", crf="", audio_bitrate="", download_started=False)
+    suggested = os.path.basename(filepath)
+    return render_template_string(ENCODE_TEMPLATE, filepath=filepath, suggested_output=suggested, codec="none", pass_mode="1-pass", bitrate="", crf="", audio_bitrate="", download_started=False)
 
 @app.route("/encode/<path:filepath>", methods=["POST"])
 def encode_file_post(filepath):
@@ -1396,12 +1373,10 @@ def delete_file(filepath):
             shutil.rmtree(full_path)
         else:
             os.remove(full_path)
-        flash(f"Deleted '{os.path.basename(filepath)}' successfully.", "success")
+        flash("Deleted successfully.", "success")
     except Exception as e:
         flash(f"Error deleting: {e}", "error")
-    
-    parent_dir = os.path.dirname(filepath)
-    return redirect(url_for('list_files', path=parent_dir if parent_dir else ''))
+    return redirect(url_for('list_files'))
 
 # -----------------------------
 # Start app
